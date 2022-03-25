@@ -182,11 +182,37 @@ bool test_control_frame(void)
     uint16_t payload_size_parser;
 	uint8_t frame_type_parser;
 
+	bool status = true;
+
     payload_size_builder = 0x0001;
     payload_builder[0] = PROTOCOL_CMD_START_STREAMING;
-    
+	
 	builder_function(PROTOCOL_CONTROL_FRAME, payload_size_builder,  payload_builder, tx_msg_buf);
-	return parser_function(tx_msg_buf, &frame_type_parser,  &payload_size_parser, payload_parser);
+	if(status)
+	{
+		if(false == parser_function(tx_msg_buf, &frame_type_parser,  &payload_size_parser, payload_parser))
+		{
+			status = false;
+		}
+	}
+
+	if(status)
+	{
+		if(payload_size_builder != payload_size_parser)
+		{
+			status = false;
+		}
+	}
+
+	if(status)
+	{
+		if(payload_builder[0] != payload_parser[0])
+		{
+			status = false;
+		}
+	}
+
+	return status;
 }
 
 /*
@@ -205,6 +231,9 @@ bool test_data_frame(void)
     uint16_t payload_size_parser;
 	uint8_t frame_type_parser;
 
+	bool status = true;
+
+
 	payload_size_builder = 0x0005;
     payload_builder[0] = 0x68;
     payload_builder[1] = 0x65;
@@ -213,7 +242,36 @@ bool test_data_frame(void)
     payload_builder[4] = 0x6F;
 
 	builder_function(PROTOCOL_DATA_FRAME, payload_size_builder,  payload_builder, tx_msg_buf);
-	return parser_function(tx_msg_buf, &frame_type_parser,  &payload_size_parser, payload_parser);
+	if(status)
+	{
+		if(false == parser_function(tx_msg_buf, &frame_type_parser,  &payload_size_parser, payload_parser))
+		{
+			status = false;
+		}
+	}
+
+	if(status)
+	{
+		if(payload_size_builder != payload_size_parser)
+		{
+			status = false;
+		}
+	}
+
+	if(status)
+	{
+		uint16_t i;
+		for(i = 0; i < payload_size_builder; i++)
+		{
+			if(payload_builder[i] != payload_parser[i])
+			{
+				status = false;
+				break;
+			}
+		}
+	}
+
+	return status;
 }
 
 /*
