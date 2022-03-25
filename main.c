@@ -5,6 +5,10 @@
 
 
 
+/*
+ * #define CRC_POLY_xxxx
+ *
+ */
 #define MAX_FRAME_SIZE                      100
 
 #define PROTOCOL_START_FLAG_SIZE            2
@@ -12,19 +16,13 @@
 #define PROTOCOL_PAYLOAD_SIZE               2
 #define PROTOCOL_CRC16_SIZE                 2
 
-
 #define PROTOCOL_HEADER1_VALUE              0xA5
 #define PROTOCOL_HEADER2_VALUE              0x5A
-
-
 
 #define PROTOCOL_CMD_START_STREAMING        0xF1
 #define PROTOCOL_CMD_STOP_STREAMING         0xF2
 #define PROTOCOL_CMD_REBOOT_STREAMING       0xF3
 #define PROTOCOL_CMD_SLEEP_STREAMING        0xF4
-
-
-
 
 /*
  * #define CRC_POLY_xxxx
@@ -62,64 +60,87 @@
 #define		CRC_START_64_WE		0xFFFFFFFFFFFFFFFFull
 
 /*
- * Prototype list of global functions
+ * typedef list of global variables
  */
-
-unsigned char *		checksum_NMEA(      const unsigned char *input_str, unsigned char *result  );
-uint8_t			crc_8(              const unsigned char *input_str, size_t num_bytes       );
-uint16_t		crc_16(             const unsigned char *input_str, size_t num_bytes       );
-uint32_t		crc_32(             const unsigned char *input_str, size_t num_bytes       );
-uint64_t		crc_64_ecma(        const unsigned char *input_str, size_t num_bytes       );
-uint64_t		crc_64_we(          const unsigned char *input_str, size_t num_bytes       );
-uint16_t		crc_ccitt_1d0f(     const unsigned char *input_str, size_t num_bytes       );
-uint16_t		crc_ccitt_ffff(     const unsigned char *input_str, size_t num_bytes       );
-uint16_t		crc_dnp(            const unsigned char *input_str, size_t num_bytes       );
-uint16_t		crc_kermit(         const unsigned char *input_str, size_t num_bytes       );
-uint16_t		crc_modbus(         const unsigned char *input_str, size_t num_bytes       );
-uint16_t		crc_sick(           const unsigned char *input_str, size_t num_bytes       );
-uint16_t		crc_xmodem(         const unsigned char *input_str, size_t num_bytes       );
-uint8_t			update_crc_8(       uint8_t  crc, unsigned char c                          );
-uint16_t		update_crc_16(      uint16_t crc, unsigned char c                          );
-uint32_t		update_crc_32(      uint32_t crc, unsigned char c                          );
-uint64_t		update_crc_64_ecma( uint64_t crc, unsigned char c                          );
-uint16_t		update_crc_ccitt(   uint16_t crc, unsigned char c                          );
-uint16_t		update_crc_dnp(     uint16_t crc, unsigned char c                          );
-uint16_t		update_crc_kermit(  uint16_t crc, unsigned char c                          );
-uint16_t		update_crc_sick(    uint16_t crc, unsigned char c, unsigned char prev_byte );
-
-
 typedef enum
 {
     PROTOCOL_CONTROL_FRAME = 0xA1,
     PROTOCOL_DATA_FRAME = 0xA2,
 } protocol_frame_type_t;
 
-static uint8_t tx_msg_buf        [MAX_FRAME_SIZE];
+/*
+ * Prototype list of global functions
+ */
+uint16_t		crc_ccitt_ffff(     const unsigned char *input_str, size_t num_bytes       );
+uint16_t		update_crc_ccitt(   uint16_t crc, unsigned char c                          );
+bool 			builder_function(protocol_frame_type_t frame_type, uint16_t payload_size, uint8_t *payload, uint8_t *output);
+bool 			parser_function(uint8_t *input, uint8_t* fram_type, uint16_t* payload_size, uint8_t *payload);
 
-static void             init_crc16_tab( void );
+bool 			test_control_frame(void);
+bool 			test_data_frame(void);
 
+
+/*
+ * Prototype list of static functions
+ */
+static uint16_t		crc_ccitt_generic( const unsigned char *input_str, size_t num_bytes, uint16_t start_value );
+static void         init_crcccitt_tab( void );
+
+/*
+ * static variable list
+ */
+static uint8_t tx_msg_buf [MAX_FRAME_SIZE];
 static bool             crc_tabccitt_init       = false;
 static uint16_t         crc_tabccitt[256];
 
 
-bool builder_function(protocol_frame_type_t frame_type, uint16_t payload_size, uint8_t *payload, uint8_t *output);
-bool parser_function(uint8_t *input, uint8_t* fram_type, uint16_t* payload_size, uint8_t *payload);
-bool test_builder_function(void);
-bool test_parser_function(uint8_t *input);
-
-static uint16_t		crc_ccitt_generic( const unsigned char *input_str, size_t num_bytes, uint16_t start_value );
-static void         init_crcccitt_tab( void );
-
 int main(void)
 {
-  	test_builder_function();
+  	if(test_control_frame())
+	{
+		printf("Control frame test passed\n");
+	}
+	else
+	{
+		printf("Control frame test failed\n");
+	}
+
+	if(test_data_frame())
+	{
+		printf("Data frame test passed\n");
+	}
+	else
+	{
+		printf("Data frame test failed\n");
+	}
+
     return 0;
 }
 
-
-
+/*
+ * builder_function(protocol_frame_type_t frame_type, uint16_t payload_size, uint8_t *payload, uint8_t *output)
+ *
+ * The function to build a protocol frame.
+ *  Input:
+ * 		+ Frame type: 
+ * 			PROTOCOL_CONTROL_FRAME
+    		PROTOCOL_DATA_FRAME
+		+ payload_size: size of the payload
+		+ output: pointer to the output buffer
+	Return:
+		+ true: if the frame is built successfully
+		+ false: if the frame is not built successfully
+ */
 bool builder_function(protocol_frame_type_t frame_type, uint16_t payload_size, uint8_t *payload, uint8_t *output)
 {
+    //|-- Header 1 --|-- Header 2 --|-- Frame type--|-- payload length --|------------ payload ------------|--  CRC16 ---|
+    //|--- 1 byte ---|--- 1 byte ---|--- 1 byte --  |---- 2 bytes -------|------------ n bytes ------------|-- 2 bytes ---|
+    //|------------------------------------------------ frame size -------------------------------------------------------|
+	printf("\n\n\n");
+	printf("=======================================================================================\n");
+	printf("================================== START BUILDER ======================================\n");
+	printf("=======================================================================================\n");	
+
 	/* TODO: Validate inpout param */
     output[0] = PROTOCOL_HEADER1_VALUE;
     output[1] = PROTOCOL_HEADER2_VALUE;
@@ -137,48 +158,84 @@ bool builder_function(protocol_frame_type_t frame_type, uint16_t payload_size, u
     output[PROTOCOL_START_FLAG_SIZE + PROTOCOL_FRAME_TYPE_SIZE + PROTOCOL_PAYLOAD_SIZE + payload_size] = (uint8_t)(crc_value >> 8);
 	output[PROTOCOL_START_FLAG_SIZE + PROTOCOL_FRAME_TYPE_SIZE + PROTOCOL_PAYLOAD_SIZE + payload_size + 1] = (uint8_t)(crc_value);
 
-    return true;
-}
-
-bool test_builder_function(void)
-{
-	uint8_t payload[MAX_FRAME_SIZE];
-    uint16_t payload_size;
-
-    // payload_size = 0x0001;
-    // payload[0] = PROTOCOL_CMD_START_STREAMING;
-    // builder_function(PROTOCOL_CONTROL_FRAME, payload_size,  payload, tx_msg_buf);
-
-	printf("=======================================================================================\n");
-	printf("================================== START BUILDER ======================================\n");
-	printf("=======================================================================================\n");
-
-    payload_size = 0x0005;
-    payload[0] = 0x68;
-    payload[1] = 0x65;
-    payload[2] = 0x6C;
-    payload[3] = 0x6C;
-    payload[4] = 0x6F;
-    builder_function(PROTOCOL_DATA_FRAME, payload_size,  payload, tx_msg_buf);
-    
-    int i;
-    for(i = 0; i < 11; i++)
-    {
-        printf("%x\n", tx_msg_buf[i]);
-    }
-    
 	printf("=======================================================================================\n");
 	printf("================================== END BUILDER ========================================\n");
 	printf("=======================================================================================\n");	
-
-	test_parser_function(tx_msg_buf);
+	printf("\n\n\n");
 
     return true;
 }
 
+/*
+ * bool test_control_frame(void)
+ *
+ * 	The function to test the control frame.
+ *  Input: None
+	Return: True or false
+ */
+bool test_control_frame(void)
+{
+	uint8_t payload_builder[MAX_FRAME_SIZE];
+    uint16_t payload_size_builder;
 
+	uint8_t payload_parser[MAX_FRAME_SIZE];
+    uint16_t payload_size_parser;
+	uint8_t frame_type_parser;
+
+    payload_size_builder = 0x0001;
+    payload_builder[0] = PROTOCOL_CMD_START_STREAMING;
+    
+	builder_function(PROTOCOL_CONTROL_FRAME, payload_size_builder,  payload_builder, tx_msg_buf);
+	return parser_function(tx_msg_buf, &frame_type_parser,  &payload_size_parser, payload_parser);
+}
+
+/*
+ * bool test_data_frame(void)
+ *
+ * 	The function to test the data frame.
+ *  Input: None
+	Return: True or false
+ */
+bool test_data_frame(void)
+{
+	uint8_t payload_builder[MAX_FRAME_SIZE];
+    uint16_t payload_size_builder;
+
+	uint8_t payload_parser[MAX_FRAME_SIZE];
+    uint16_t payload_size_parser;
+	uint8_t frame_type_parser;
+
+	payload_size_builder = 0x0005;
+    payload_builder[0] = 0x68;
+    payload_builder[1] = 0x65;
+    payload_builder[2] = 0x6C;
+    payload_builder[3] = 0x6C;
+    payload_builder[4] = 0x6F;
+
+	builder_function(PROTOCOL_DATA_FRAME, payload_size_builder,  payload_builder, tx_msg_buf);
+	return parser_function(tx_msg_buf, &frame_type_parser,  &payload_size_parser, payload_parser);
+}
+
+/*
+ * bool parser_function(uint8_t *input, uint8_t* frame_type, uint16_t* payload_size, uint8_t *payload)
+ *
+ * The function to build a protocol frame.
+ *  Input:
+ * 		+ input: pointer to the input buffer
+		+ frame_type: pointer to the frame type
+		+ payload_size: pointer to the payload size
+		+ payload: pointer to the payload
+	Return:
+		+ true: if the frame is parse successfully
+		+ false: if the frame is not parse successfully
+ */
 bool parser_function(uint8_t *input, uint8_t* frame_type, uint16_t* payload_size, uint8_t *payload)
 {
+	printf("\n\n\n");
+	printf("=======================================================================================\n");
+	printf("================================== START PARSER =======================================\n");
+	printf("=======================================================================================\n");
+
 	bool status = true;
 	/* TODO: Validate intput parameter */
 	*frame_type = input[PROTOCOL_START_FLAG_SIZE];
@@ -195,35 +252,15 @@ bool parser_function(uint8_t *input, uint8_t* frame_type, uint16_t* payload_size
 	}
 	else
 	{
-		printf("Parser successfully\n");
-	}
-
-	return status;
-}
-
-bool test_parser_function(uint8_t *input)
-{
-	uint8_t payload[MAX_FRAME_SIZE];
-    uint16_t payload_size;
-	uint8_t frame_type;
-	int i;
-
-	printf("=======================================================================================\n");
-	printf("================================== START PARSER =======================================\n");
-	printf("=======================================================================================\n");
-	
-	parser_function(input, &frame_type,  &payload_size, payload);
-	printf("frame_type: %x\n", frame_type);
-	printf("payload_size: %d\n", payload_size);
-
-	for(i = 0; i < 10; i++)
-	{
-		printf("0x%x\n", payload[i]);
+		printf("Validate CRC successfully\n");
 	}
 
 	printf("=======================================================================================\n");
 	printf("================================== END PARSER =========================================\n");
 	printf("=======================================================================================\n");
+	printf("\n\n\n");
+
+	return status;
 }
 
 /*
