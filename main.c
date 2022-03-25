@@ -95,31 +95,32 @@ typedef enum
 } protocol_frame_type_t;
 
 static uint8_t tx_msg_buf        [MAX_FRAME_SIZE];
-static uint8_t rx_msg_buf        [MAX_FRAME_SIZE];
 
 static void             init_crc16_tab( void );
 
-static bool             crc_tab16_init          = false;
-static uint16_t         crc_tab16[256];
+static bool             crc_tabccitt_init       = false;
+static uint16_t         crc_tabccitt[256];
 
 
 bool builder_function(protocol_frame_type_t frame_type, uint16_t payload_size, uint8_t *payload, uint8_t *output);
-bool parser_function(uint8_t *input, uint8_t* fram_type, uint8_t* payload_size, uint8_t *payload);
-
+bool parser_function(uint8_t *input, uint8_t* fram_type, uint16_t* payload_size, uint8_t *payload);
 bool test_builder_function(void);
-bool test_parser_function(void);
+bool test_parser_function(uint8_t *input);
+
+static uint16_t		crc_ccitt_generic( const unsigned char *input_str, size_t num_bytes, uint16_t start_value );
+static void         init_crcccitt_tab( void );
 
 int main(void)
 {
   	test_builder_function();
-  	
-
     return 0;
 }
 
 
+
 bool builder_function(protocol_frame_type_t frame_type, uint16_t payload_size, uint8_t *payload, uint8_t *output)
 {
+	/* TODO: Validate inpout param */
     output[0] = PROTOCOL_HEADER1_VALUE;
     output[1] = PROTOCOL_HEADER2_VALUE;
     output[2] = (uint8_t)frame_type;
@@ -131,9 +132,11 @@ bool builder_function(protocol_frame_type_t frame_type, uint16_t payload_size, u
                                                     payload, payload_size);
     
     
-    uint16_t crc_value = crc_16(output, PROTOCOL_START_FLAG_SIZE + PROTOCOL_FRAME_TYPE_SIZE + payload_size);
+    uint16_t crc_value = crc_ccitt_ffff(output, PROTOCOL_START_FLAG_SIZE + PROTOCOL_FRAME_TYPE_SIZE + PROTOCOL_PAYLOAD_SIZE + payload_size);
     
-    memcpy(&output[PROTOCOL_START_FLAG_SIZE + PROTOCOL_FRAME_TYPE_SIZE + PROTOCOL_FRAME_TYPE_SIZE + payload_size], &crc_value, PROTOCOL_CRC16_SIZE);
+    output[PROTOCOL_START_FLAG_SIZE + PROTOCOL_FRAME_TYPE_SIZE + PROTOCOL_PAYLOAD_SIZE + payload_size] = (uint8_t)(crc_value >> 8);
+	output[PROTOCOL_START_FLAG_SIZE + PROTOCOL_FRAME_TYPE_SIZE + PROTOCOL_PAYLOAD_SIZE + payload_size + 1] = (uint8_t)(crc_value);
+
     return true;
 }
 
@@ -142,17 +145,21 @@ bool test_builder_function(void)
 	uint8_t payload[MAX_FRAME_SIZE];
     uint16_t payload_size;
 
-    payload_size = 0x0001;
-    payload[0] = PROTOCOL_CMD_START_STREAMING;
-    builder_function(PROTOCOL_CONTROL_FRAME, payload_size,  payload, tx_msg_buf);
+    // payload_size = 0x0001;
+    // payload[0] = PROTOCOL_CMD_START_STREAMING;
+    // builder_function(PROTOCOL_CONTROL_FRAME, payload_size,  payload, tx_msg_buf);
 
-    // payload_size = 0x0005;
-    // payload[0] = 0x68;
-    // payload[1] = 0x65;
-    // payload[2] = 0x6C;
-    // payload[3] = 0x6C;
-    // payload[4] = 0x6F;
-    // builder_function(PROTOCOL_DATA_FRAME, payload_size,  payload, tx_msg_buf);
+	printf("=======================================================================================\n");
+	printf("================================== START BUILDER ======================================\n");
+	printf("=======================================================================================\n");
+
+    payload_size = 0x0005;
+    payload[0] = 0x68;
+    payload[1] = 0x65;
+    payload[2] = 0x6C;
+    payload[3] = 0x6C;
+    payload[4] = 0x6F;
+    builder_function(PROTOCOL_DATA_FRAME, payload_size,  payload, tx_msg_buf);
     
     int i;
     for(i = 0; i < 11; i++)
@@ -160,101 +167,159 @@ bool test_builder_function(void)
         printf("%x\n", tx_msg_buf[i]);
     }
     
+	printf("=======================================================================================\n");
+	printf("================================== END BUILDER ========================================\n");
+	printf("=======================================================================================\n");	
+
+	test_parser_function(tx_msg_buf);
+
     return true;
 }
 
 
-bool parser_function(uint8_t *input, uint8_t* fram_type, uint8_t* payload_size, uint8_t *payload)
+bool parser_function(uint8_t *input, uint8_t* frame_type, uint16_t* payload_size, uint8_t *payload)
 {
-	// Check crc value
-	*fram_type = input[PROTOCOL_START_FLAG_SIZE];
+	bool status = true;
+	/* TODO: Validate intput parameter */
+	*frame_type = input[PROTOCOL_START_FLAG_SIZE];
 	*payload_size = ((uint16_t)(input[PROTOCOL_START_FLAG_SIZE + PROTOCOL_FRAME_TYPE_SIZE]) << 8) | (input[PROTOCOL_START_FLAG_SIZE + PROTOCOL_FRAME_TYPE_SIZE + 1]);
-	memcpy(&input[PROTOCOL_START_FLAG_SIZE + PROTOCOL_FRAME_TYPE_SIZE + PROTOCOL_PAYLOAD_SIZE], payload, *payload_size);
+	memcpy(payload, &input[PROTOCOL_START_FLAG_SIZE + PROTOCOL_FRAME_TYPE_SIZE + PROTOCOL_PAYLOAD_SIZE], *payload_size);
+
+	uint16_t old_crc_val = ((uint16_t)input[PROTOCOL_START_FLAG_SIZE + PROTOCOL_FRAME_TYPE_SIZE + PROTOCOL_PAYLOAD_SIZE  + *payload_size] << 8) | (input[PROTOCOL_START_FLAG_SIZE + PROTOCOL_FRAME_TYPE_SIZE + PROTOCOL_PAYLOAD_SIZE  + *payload_size + 1]);
+	uint16_t new_crc_val = crc_ccitt_ffff(input, PROTOCOL_START_FLAG_SIZE + PROTOCOL_FRAME_TYPE_SIZE + PROTOCOL_PAYLOAD_SIZE  + *payload_size);
+
+	if(old_crc_val != new_crc_val)
+	{
+		status = false;
+		printf("Failed to validate CRC value\n");
+	}
+	else
+	{
+		printf("Parser successfully\n");
+	}
+
+	return status;
 }
 
-bool test_parser_function(void)
+bool test_parser_function(uint8_t *input)
 {
-//	uint8_t payload[MAX_FRAME_SIZE];
-//    uint16_t payload_size;
-//
-//    payload_size = 0x0001;
-//    payload[0] = PROTOCOL_CMD_START_STREAMING;
-//    builder_function(PROTOCOL_CONTROL_FRAME, payload_size,  payload, tx_msg_buf);
+	uint8_t payload[MAX_FRAME_SIZE];
+    uint16_t payload_size;
+	uint8_t frame_type;
+	int i;
+
+	printf("=======================================================================================\n");
+	printf("================================== START PARSER =======================================\n");
+	printf("=======================================================================================\n");
+	
+	parser_function(input, &frame_type,  &payload_size, payload);
+	printf("frame_type: %x\n", frame_type);
+	printf("payload_size: %d\n", payload_size);
+
+	for(i = 0; i < 10; i++)
+	{
+		printf("0x%x\n", payload[i]);
+	}
+
+	printf("=======================================================================================\n");
+	printf("================================== END PARSER =========================================\n");
+	printf("=======================================================================================\n");
 }
 
-uint16_t crc_16( const unsigned char *input_str, size_t num_bytes ) {
+/*
+ * uint16_t crc_xmodem( const unsigned char *input_str, size_t num_bytes );
+ *
+ * The function crc_xmodem() performs a one-pass calculation of an X-Modem CRC
+ * for a byte string that has been passed as a parameter.
+ */
+
+uint16_t crc_xmodem( const unsigned char *input_str, size_t num_bytes ) {
+
+	return crc_ccitt_generic( input_str, num_bytes, CRC_START_XMODEM );
+
+}  /* crc_xmodem */
+
+/*
+ * uint16_t crc_ccitt_1d0f( const unsigned char *input_str, size_t num_bytes );
+ *
+ * The function crc_ccitt_1d0f() performs a one-pass calculation of the CCITT
+ * CRC for a byte string that has been passed as a parameter. The initial value
+ * 0x1d0f is used for the CRC.
+ */
+
+uint16_t crc_ccitt_1d0f( const unsigned char *input_str, size_t num_bytes ) {
+
+	return crc_ccitt_generic( input_str, num_bytes, CRC_START_CCITT_1D0F );
+
+}  /* crc_ccitt_1d0f */
+
+/*
+ * uint16_t crc_ccitt_ffff( const unsigned char *input_str, size_t num_bytes );
+ *
+ * The function crc_ccitt_ffff() performs a one-pass calculation of the CCITT
+ * CRC for a byte string that has been passed as a parameter. The initial value
+ * 0xffff is used for the CRC.
+ */
+
+uint16_t crc_ccitt_ffff( const unsigned char *input_str, size_t num_bytes ) {
+
+	return crc_ccitt_generic( input_str, num_bytes, CRC_START_CCITT_FFFF );
+
+}  /* crc_ccitt_ffff */
+
+/*
+ * static uint16_t crc_ccitt_generic( const unsigned char *input_str, size_t num_bytes, uint16_t start_value );
+ *
+ * The function crc_ccitt_generic() is a generic implementation of the CCITT
+ * algorithm for a one-pass calculation of the CRC for a byte string. The
+ * function accepts an initial start value for the crc.
+ */
+
+static uint16_t crc_ccitt_generic( const unsigned char *input_str, size_t num_bytes, uint16_t start_value ) {
 
 	uint16_t crc;
 	const unsigned char *ptr;
 	size_t a;
 
-	if ( ! crc_tab16_init ) init_crc16_tab();
+	if ( ! crc_tabccitt_init ) init_crcccitt_tab();
 
-	crc = CRC_START_16;
+	crc = start_value;
 	ptr = input_str;
 
 	if ( ptr != NULL ) for (a=0; a<num_bytes; a++) {
 
-		crc = (crc >> 8) ^ crc_tab16[ (crc ^ (uint16_t) *ptr++) & 0x00FF ];
+		crc = (crc << 8) ^ crc_tabccitt[ ((crc >> 8) ^ (uint16_t) *ptr++) & 0x00FF ];
 	}
 
 	return crc;
 
-}  /* crc_16 */
+}  /* crc_ccitt_generic */
 
 /*
- * uint16_t crc_modbus( const unsigned char *input_str, size_t num_bytes );
+ * uint16_t update_crc_ccitt( uint16_t crc, unsigned char c );
  *
- * The function crc_modbus() calculates the 16 bits Modbus CRC in one pass for
- * a byte string of which the beginning has been passed to the function. The
- * number of bytes to check is also a parameter.
+ * The function update_crc_ccitt() calculates a new CRC-CCITT value based on
+ * the previous value of the CRC and the next byte of the data to be checked.
  */
 
-uint16_t crc_modbus( const unsigned char *input_str, size_t num_bytes ) {
+uint16_t update_crc_ccitt( uint16_t crc, unsigned char c ) {
 
-	uint16_t crc;
-	const unsigned char *ptr;
-	size_t a;
+	if ( ! crc_tabccitt_init ) init_crcccitt_tab();
 
-	if ( ! crc_tab16_init ) init_crc16_tab();
+	return (crc << 8) ^ crc_tabccitt[ ((crc >> 8) ^ (uint16_t) c) & 0x00FF ];
 
-	crc = CRC_START_MODBUS;
-	ptr = input_str;
-
-	if ( ptr != NULL ) for (a=0; a<num_bytes; a++) {
-
-		crc = (crc >> 8) ^ crc_tab16[ (crc ^ (uint16_t) *ptr++) & 0x00FF ];
-	}
-
-	return crc;
-
-}  /* crc_modbus */
+}  /* update_crc_ccitt */
 
 /*
- * uint16_t update_crc_16( uint16_t crc, unsigned char c );
+ * static void init_crcccitt_tab( void );
  *
- * The function update_crc_16() calculates a new CRC-16 value based on the
- * previous value of the CRC and the next byte of data to be checked.
+ * For optimal performance, the routine to calculate the CRC-CCITT uses a
+ * lookup table with pre-compiled values that can be directly applied in the
+ * XOR action. This table is created at the first call of the function by the
+ * init_crcccitt_tab() routine.
  */
 
-uint16_t update_crc_16( uint16_t crc, unsigned char c ) {
-
-	if ( ! crc_tab16_init ) init_crc16_tab();
-
-	return (crc >> 8) ^ crc_tab16[ (crc ^ (uint16_t) c) & 0x00FF ];
-
-}  /* update_crc_16 */
-
-/*
- * static void init_crc16_tab( void );
- *
- * For optimal performance uses the CRC16 routine a lookup table with values
- * that can be used directly in the XOR arithmetic in the algorithm. This
- * lookup table is calculated by the init_crc16_tab() routine, the first time
- * the CRC function is called.
- */
-
-static void init_crc16_tab( void ) {
+static void init_crcccitt_tab( void ) {
 
 	uint16_t i;
 	uint16_t j;
@@ -264,19 +329,19 @@ static void init_crc16_tab( void ) {
 	for (i=0; i<256; i++) {
 
 		crc = 0;
-		c   = i;
+		c   = i << 8;
 
 		for (j=0; j<8; j++) {
 
-			if ( (crc ^ c) & 0x0001 ) crc = ( crc >> 1 ) ^ CRC_POLY_16;
-			else                      crc =   crc >> 1;
+			if ( (crc ^ c) & 0x8000 ) crc = ( crc << 1 ) ^ CRC_POLY_CCITT;
+			else                      crc =   crc << 1;
 
-			c = c >> 1;
+			c = c << 1;
 		}
 
-		crc_tab16[i] = crc;
+		crc_tabccitt[i] = crc;
 	}
 
-	crc_tab16_init = true;
+	crc_tabccitt_init = true;
 
-}  /* init_crc16_tab */
+}  /* init_crcccitt_tab */
